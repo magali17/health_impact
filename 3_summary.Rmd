@@ -1,0 +1,102 @@
+---
+title: "Sumary of Health Impact - Aircraft UFP"
+author: "Magali Blanco"
+date: "2024-05-03"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+##################################################################################################
+# SETUP
+##################################################################################################
+# Clear workspace of all objects and unload all extra (non-base) packages
+rm(list = ls(all = TRUE))
+if (!is.null(sessionInfo()$otherPkgs)) {
+  res <- suppressWarnings(
+    lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+           detach, character.only=TRUE, unload=TRUE, force=TRUE))
+}
+
+pacman::p_load(tidyverse, sf)
+
+source("functions.R")
+
+out_path <- file.path("data", "output")
+
+set.seed(1)
+ 
+##################################################################################################
+# DATA
+##################################################################################################
+load(file.path("data", "modified", "analysis_files.rda"))
+load(file.path("data", "output", "health_impact_files.rda"))
+
+health_impact <- health_impact %>% 
+  mutate(control_scenario = gsub(".*_", "", control_scenario) %>% as.numeric())
+ 
+
+##################################################################################################
+# COMMON VARIABLES
+##################################################################################################
+main_outcomes <- c("PTB")
+
+# --> TO DO
+race_levels <- c("non_hispanic_white", "asian", )
+
+```
+
+# Incidence
+
+--> assumptions table...
+
+```{r}
+
+```
+
+
+# Population
+--> pop counts vs groups/maps
+
+```{r}
+
+```
+
+
+# Baseline Exposure & Control Scenarios  
+
+--> exposure maps before/after
+--> Y: exposure vs X: groups (show exposure disparities & po)
+
+```{r}
+
+
+
+
+```
+
+
+# Health Impact from Air Pollution Reductions
+
+```{r}
+# unique(health_impact$variable)
+
+#race
+health_impact %>%
+  filter(outcome %in% main_outcomes,
+         grepl("race|white", variable),
+         variable != "white",
+         ) %>% distinct(variable)
+  mutate(variable = gsub("race_", "", variable)) %>%
+
+  ggplot(aes(x=variable, y=outcome_control, col=control_scenario)) + 
+  facet_wrap(~outcome) + 
+  geom_boxplot()
+
+```
+
+
+
+
+
