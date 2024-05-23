@@ -15,8 +15,6 @@ if (!is.null(sessionInfo()$otherPkgs)) {
 
 pacman::p_load(tidyverse, sf, parallel)
 
-source("functions.R")
-
 in_path <- file.path("data", "modified")
 out_path <- file.path("data", "output")
 
@@ -43,13 +41,16 @@ ap_controls <- c(1, seq(25, 100, 25))
 # health outcomes we will evaluate 
 outcomes <- unique(risk$outcome)
 # census groups (e.g., age, sex, race...)
-#pop_groups <- unique(pop$variable)
-## select a subset groups of interest
+# groups of interest
+# pop_groups <- unique(pop$variable)
+
+## --> update
 pop_groups <- c("pop_total", 
                 "non_hispanic_white", "people_of_color",
                 "male", "female",
                 "age_00_04", "age_05_19", "age_20_64", "age_65_plus",
-                "partner_same_sex", "partner_opposite_sex"
+                "partner_same_sex", "partner_opposite_sex",
+                "poverty_above", "poverty_below"
 )
 
 
@@ -182,7 +183,7 @@ health_impacts <- function(pop_groups.=pop_groups, outcomes.=outcomes, ap_contro
 ##################################################################################################
 # HEALTH IMPACT ASSESSMENT
 ##################################################################################################
-# --> consider saving smaller grouped files?
+# --> consider saving smaller grouped files? if(!file.exists() & override_file=TRUE)...
 
 health_impact <- health_impacts(pop_groups.=pop_groups, outcomes.=outcomes, ap_controls.=ap_controls)
 
