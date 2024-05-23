@@ -43,8 +43,6 @@ pacman::p_load(data.table, # for read_aermod_excel()
                leaflet #map QC checks
 )
 
-source("functions.R")
-
 # where modified data will be saved
 dt_path <- file.path("data", "modified")
 # where files for analysis will be saved
