@@ -45,12 +45,17 @@ pacman::p_load(data.table, # for read_aermod_excel()
 
 source("functions.R")
 
+# where modified data will be saved
 dt_path <- file.path("data", "modified")
+# where files for analysis will be saved
 out_path <- file.path("data", "output", "analysis")
 
-if(!dir.exists(file.path("data", "raw", "cdc_wonder", "api_request"))) {dir.create(file.path("data", "raw", "cdc_wonder", "api_request"), recursive = T)}
-if(!dir.exists(dt_path)) {dir.create(dt_path, recursive = T)}
-if(!dir.exists(file.path(out_path, "shapefiles"))) {dir.create(file.path(out_path, "shapefiles"), recursive = T)}
+# create directories if they don't exist
+directory_list <- c(dt_path,
+                    out_path,
+                    file.path("data", "raw", "cdc_wonder", "api_request"))
+
+lapply(directory_list, function(x) {if(!dir.exists(x)) {dir.create(x, recursive = T)}})
 
 set.seed(1)
 ##################################################################################################
@@ -65,8 +70,8 @@ utm_zone10_crs <- 32610 # crs = "+proj=utm +zone=10 +datum=WGS84 +units=m +ellps
 # census data year
 yr <- 2020
 
-# --> UPDATE FILE PATH
-aermod_file_path <- file.path()
+# file path for predicted air pollution
+ap_file_path <- file.path("~", "Documents", "AERMOD UFP Analysis", "WillThesisAERMODfiles", "AERMOD Import R")
 
 ##################################################################################################
 # GRIDDED AIR POLLUTION PREDICTIONS & STUDY AREA
@@ -110,10 +115,7 @@ read_aermod_excel <- function(filename, direction, activity){
 # --> why does this grid have a small tail on bottom right of 9 centroids?
 
 # file xlsx can be any aermod landing/take-off file w/ the same grid system
-
-# --> UPDATE FILE PATH
-
-grid <- read_aermod_excel("NorthBoundLanding_Predictions.xlsx","NFlow","landing") %>%
+grid <- read_aermod_excel(file.path(ap_file_path, "NorthBoundLanding_Predictions.xlsx"),"NFlow","landing") %>%
   st_as_sf(coords = c('x', 'y'), crs=utm_zone10_crs, remove = F) %>% 
   cbind(st_coordinates(.)) %>%
   select(x=X, y=Y)  
@@ -150,7 +152,7 @@ saveRDS(grid, file.path(dt_path, "grid.rds"))
 # Import calibrated EARMOD predictions (from aermod_calibration.R)
 
 # --> TO DO: upate this using Ningrui's work?
-calibrated_aermod <- readRDS(file.path("data", "modified", "grid_aermod_predictions_calibrated.rda")) %>%
+calibrated_aermod <- readRDS(file.path(ap_file_path, "data", "modified", "grid_aermod_predictions_calibrated.rda")) %>%
   st_drop_geometry()
 
 grid_baseline <- left_join(grid, calibrated_aermod, by=c("Column", "Row")) %>%
@@ -175,7 +177,7 @@ aermod_area <- grid %>%
   mutate(Column = 1,
          Row = 1) 
 
-saveRDS(aermod_area, file.path(dt_path, "aermod_area.rda"))
+#saveRDS(aermod_area, file.path(dt_path, "aermod_area.rda"))
 
 ##################################################################################################
 # CENSUS TRACTS (DEMOGRAPHIC & AGGREGATION UNITS)
