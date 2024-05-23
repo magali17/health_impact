@@ -24,7 +24,7 @@ set.seed(1)
 use_cores <-1
 
 # run a subset of scenarios
-test_run <- FALSE#TRUE 
+test_run <- TRUE 
 
 ##################################################################################################
 # DATA
@@ -38,39 +38,50 @@ main_health_impact_fn <- health_impact_functions %>%
   filter(grepl("attributable fraction", name)) %>% 
   pull(form)
 
+# percent reduction in air pollution (AP)
 ap_controls <- c(1, seq(25, 100, 25))
+# health outcomes we will evaluate 
 outcomes <- unique(risk$outcome)
-pop_groups <- unique(pop$variable)
+# census groups (e.g., age, sex, race...)
+#pop_groups <- unique(pop$variable)
+## select a subset groups of interest
+pop_groups <- c("pop_total", 
+                "non_hispanic_white", "people_of_color",
+                "male", "female",
+                "age_00_04", "age_05_19", "age_20_64", "age_65_plus",
+                "partner_same_sex", "partner_opposite_sex"
+)
+
+
 
 if(test_run == TRUE) {
   ap_controls <- c(25,75) 
-  outcomes <- outcomes[1]
-  pop_groups <- c("pop_total", "male", "female")
+  #outcomes <- outcomes[1]
+  #pop_groups <- c("pop_total", "male", "female")
 }
 ##################################################################################################
 # FUNCTIONS 
 ##################################################################################################
 # calcualte air pollution during control scenarios
+
 control_scenarios <- function(dt=air_pollution,
                               control_rollback = "percent",
                               control_value) {
   dt %>%
-      group_by(GEOID) %>%
-      mutate(control_scenario = paste0(control_rollback, "_", control_value),
-             control_value = ifelse(control_rollback == "percent", Values*(1-control_value/100),
-                                       ifelse(control_rollback == "fixed", control_value, NA)),
-             # note: Values must be greater than control_value, otherwise exp(b) is different
-             delta_ap = Values - control_value,
-             #delta_ap = control_value-Values 
-             ) %>%
-      ungroup()
-  }
+    group_by(GEOID) %>%
+    mutate(control_scenario = paste0(control_rollback, "_", control_value),
+           control_value = ifelse(control_rollback == "percent", Values*(1-control_value/100),
+                                  ifelse(control_rollback == "fixed", control_value, NA)),
+           # note: Values must be greater than control_value, otherwise exp(b) (RR/OR/HR) is different
+           delta_ap = Values - control_value,
+           #delta_ap = control_value-Values 
+    ) %>%
+    ungroup()
+}
 
 ##################################################################################################
 # get RR/OR/HR for a specific unit change in air pollution
 
-# dt = air_pollution_control 
-# outcome. <- "PTB"
 transform_rr <- function(dt, outcome.) {
   # for a 95% CI, ~1.96
   z <- qnorm(.975)
@@ -94,17 +105,14 @@ transform_rr <- function(dt, outcome.) {
 
 ##################################################################################################
 # calcualte attributable fraction for a given HR/OR/HR
+
 attributable_fraction <- function(rr) {(rr-1)/rr}
 
 ##################################################################################################
-# add population/group of interest & incidence
+# combine population/group of interest & outcome incidence information 
+## (currently incidence info is for county-level estimates so does not change by group)
 
-# pop_variable <- "pop_total"
-# outcome. <- "PTB"
-# incidence_geography="county"
-
-get_pop_info <- function(pop_variable, outcome.#, incidence_geography="county"
-                         ) {
+get_pop_info <- function(pop_variable, outcome.) {
   pop_temp <- filter(pop, variable %in% pop_variable)
   incidence_temp <- filter(incidence, outcome==outcome.)
   
@@ -122,19 +130,14 @@ get_pop_info <- function(pop_variable, outcome.#, incidence_geography="county"
 }
 
 ##################################################################################################
-# HEALTH IMPACT ASSESSMENT
-##################################################################################################
 # health impact function
+## combines exposure, population, incidence information to estimate changes in an outcome related to a specific air pollution change for a specific group
 
-# health_function = main_health_impact_fn
-# exposure_dt = air_pollution_control 
-# outcome_dt = pop_temp
-
-calculate_health_impact <- function(exposure_dt, outcome_dt
-                                    
-                                    # --> TO DO: HOW TO PASS IN A STRING?
-                                    #, health_function 
-                                    ) {
+calculate_a_health_impact <- function(exposure_dt, #has current & control scenario AP levels
+                                      outcome_dt # has pop counts & area-level incidence info
+                                      # --> TO DO: HOW TO PASS IN A STRING?
+                                      #, health_function 
+) {
   exposure_dt %>%
     select(GEOID, Values, control_scenario, control_value, delta_ap, outcome, contains("af_")) %>%
     pivot_longer(contains("af_"), names_to = "af_name", values_to = "af") %>%  
@@ -143,47 +146,49 @@ calculate_health_impact <- function(exposure_dt, outcome_dt
     # --> NEED TO UPDATE
     mutate(outcome_control = af*incidence*pop,
            #outcome_control = health_function
-           )  
+    )  
 }
 
 ##################################################################################################
-# this_pop_group = pop_groups[2]
-# this_outcome = outcomes[1]
-# this_control_scenario = ap_controls[2]
-
-health_impact <- mclapply(pop_groups, mc.cores = use_cores, function(this_pop_group) {
-  lapply(outcomes, function(this_outcome){
-    lapply(ap_controls, function(this_control_scenario) {
-      
-      exposure_dt. <- air_pollution %>%
-        # calculate exposure levels under control scenarios
-        control_scenarios(dt=.,control_rollback = "percent", this_control_scenario) %>%
-        # calculate a beta for a given change in exposure
-        transform_rr(dt = ., outcome. = this_outcome) %>% 
-        # calculate attributable fraction based on a health HR
-        mutate(af_mean = attributable_fraction(mean_trans),
-               af_lower = attributable_fraction(lower_trans),
-               af_upper = attributable_fraction(upper_trans))
-      
-      outcome_dt. <- get_pop_info(pop_variable = this_pop_group, outcome. = this_outcome)
-      
-      calculate_health_impact(exposure_dt = exposure_dt., outcome_dt = outcome_dt.)
-      }) %>% bind_rows()
+# function repeats calculate_a_health_impact() many times for multiple groups (e.g., age/sex/race), control scenarios, and outcomes of interest
+health_impacts <- function(pop_groups.=pop_groups, outcomes.=outcomes, ap_controls.=ap_controls) {
+  
+  result <- mclapply(pop_groups., mc.cores = use_cores, function(this_pop_group) {
+    # for a specific outcome
+    lapply(outcomes., function(this_outcome){
+      # for a specific control scenario
+      lapply(ap_controls., function(this_control_scenario) {
+        
+        exposure_dt. <- air_pollution %>%
+          # calculate exposure levels under control scenarios
+          control_scenarios(dt=.,control_rollback = "percent", this_control_scenario) %>%
+          # calculate a health beta for this AP exposure change
+          transform_rr(dt = ., outcome. = this_outcome) %>% 
+          # calculate attributable fraction based on a health HR
+          mutate(af_mean = attributable_fraction(mean_trans),
+                 af_lower = attributable_fraction(lower_trans),
+                 af_upper = attributable_fraction(upper_trans))
+        
+        outcome_dt. <- get_pop_info(pop_variable = this_pop_group, outcome. = this_outcome)
+        
+        calculate_a_health_impact(exposure_dt = exposure_dt., outcome_dt = outcome_dt.)
+      }) %>% bind_rows() 
     }) %>% bind_rows()
   })  %>% bind_rows()
+  
+  return(result)
+}
 
 ##################################################################################################
-# MERGE IN VULNERABILITY INDECES (E.G., TRACT LEVEL)
+# HEALTH IMPACT ASSESSMENT
 ##################################################################################################
+# --> consider saving smaller grouped files?
 
-
-
+health_impact <- health_impacts(pop_groups.=pop_groups, outcomes.=outcomes, ap_controls.=ap_controls)
 
 ##################################################################################################
 # SAVE RESULTS
 ##################################################################################################
-
-
-save(
-  health_impact,
-  file = file.path(out_path, "health_impact_files.rda"))
+save(health_impact, 
+     pop_groups, #main variables to be used in (male/female, ages, race....)
+     file = file.path(out_path, "health_impact_files.rda"))

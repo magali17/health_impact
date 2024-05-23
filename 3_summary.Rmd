@@ -19,7 +19,7 @@ if (!is.null(sessionInfo()$otherPkgs)) {
            detach, character.only=TRUE, unload=TRUE, force=TRUE))
 }
 
-pacman::p_load(tidyverse, sf)
+pacman::p_load(tidyverse, sf, knitr, kableExtra)
 
 source("functions.R")
 
@@ -27,6 +27,13 @@ out_path <- file.path("data", "output")
 
 set.seed(1)
  
+# ggplot settings
+theme_set(theme_bw())
+theme_update(legend.position = "bottom")
+
+# run a subset of scenarios
+test_run <- TRUE 
+
 ##################################################################################################
 # DATA
 ##################################################################################################
@@ -34,34 +41,114 @@ load(file.path("data", "modified", "analysis_files.rda"))
 load(file.path("data", "output", "health_impact_files.rda"))
 
 health_impact <- health_impact %>% 
-  mutate(control_scenario = gsub(".*_", "", control_scenario) %>% as.numeric())
+  # remove "percent_" from rollback scenario label
+  mutate(control_scenario = gsub(".*_", "", control_scenario) %>% as.numeric() %>% as.factor())  
  
-
+if(test_run == TRUE) {
+  keep_geoids <- sample(x=unique(pop$GEOID), size = 200, replace = F)
+  
+  health_impact <- health_impact %>%
+    filter(control_scenario %in% c(25, 50#, 75
+                                   ),
+           outcome == first(outcome),
+           #grepl("pop_|age|male|female|race|hispanic", variable),
+           grepl("pop_total|male|female|race|hispanic", variable),
+           #!grepl("sex|house|poverty", variable),
+           GEOID %in% keep_geoids
+           )
+  
+}
 ##################################################################################################
 # COMMON VARIABLES
 ##################################################################################################
-main_outcomes <- c("PTB")
+#main_outcomes <- first(health_impact$outcome) #c("PTB")
 
-# --> TO DO
-race_levels <- c("non_hispanic_white", "asian", )
+# --> define levels for e.g., 'variable'
+
+
+##################################################################################################
+# FUNCTIONS
+##################################################################################################
+
+# --> function to label 'variable'
+
+
+##################################################################################################
+# --> MOVE TO prep_benmap.R? DATA SETUP
+##################################################################################################
+ 
+
 
 ```
 
-# Incidence
+# --> * include all ages? doesn't make sense for children? is PTB incidnece for total pop (not just women of childbearing age)?
 
---> assumptions table...
+# --> TO DO: calculate proportion of reducions (subgroup total) for eac subgroup? add 2nd x-axis? 
 
-```{r}
 
-```
+# Health Impact Assumptions 
+
+* assuming risk (AF) is the same across populations within an area (i.e., does not differentiate between higher risk groups [e.g., children, elderly, pregnant])
+
 
 
 # Population
+
+* using Census 2020 info
+
+
 --> pop counts vs groups/maps
 
+## table counts 
+
 ```{r}
+# table of counts
+health_impact %>%
+  st_drop_geometry() %>%
+  distinct(GEOID, variable, pop) %>%
+  group_by(variable) %>%
+  summarize(n=n(),
+            Min = min(pop),
+            Q25 = quantile(pop, 0.25),
+            Median = median(pop),
+            Mean = mean(pop),
+            SD = sd(pop),
+            Q75 = quantile(pop, 0.75),
+            Max = max(pop)
+            ) %>%
+  kable(caption = "distribution of total population counts by census tract") %>%
+  kable_styling()
 
 ```
+
+## maps
+
+```{r}
+# map_variables <- c("pop_total", "female", "age_median", 
+#                    # --> change to people of COlor 
+#                    "non_hispanic_white",
+#                    "age_00_04", "age_05_19", "age_20_64", "age_65_plus"
+#                    )
+
+
+# map of total pop
+health_impact %>%
+  filter(#variable %in% map_variables
+         ) %>%
+  distinct(GEOID, variable, pop, geometry) %>%
+  ggplot(aes(fill=pop)) + 
+  facet_wrap(~variable) +
+  geom_sf() +
+  scale_fill_viridis_b(#option="magma"
+                        #option="heat"
+                       ) +
+  labs(fill="Population Count")
+
+
+
+```
+
+
 
 
 # Baseline Exposure & Control Scenarios  
@@ -79,24 +166,128 @@ race_levels <- c("non_hispanic_white", "asian", )
 
 # Health Impact from Air Pollution Reductions
 
+### --> do we want to look at % reduction from baseline/standardized to pop size? do some groups have very small sizes?
+
+## categorical variables
+
 ```{r}
-# unique(health_impact$variable)
+# plot1 function
+
+cases_by_group_plot <- function(dt, group_name) {
+  dt %>%
+    # point health estimates
+    filter(af_name == "af_mean") %>%
+    
+    ggplot(aes(y=variable, x=outcome_control, fill=control_scenario)) + 
+  facet_wrap(~outcome, scales="free_x") + 
+  geom_boxplot() + 
+  labs(y= group_name,
+       x="Number of Cases Reduced",
+       fill = "UFP Reduction (%)")
+}
+
+##################################################################################################
+# race
+race_levels <- c("non_hispanic_white", "asian", "hispanic", "multiple", "black_aa", "hawaiian_islander", "native", "other")
 
 #race
 health_impact %>%
-  filter(outcome %in% main_outcomes,
-         grepl("race|white", variable),
-         variable != "white",
-         ) %>% distinct(variable)
-  mutate(variable = gsub("race_", "", variable)) %>%
+  filter(
+    #outcome %in% main_outcomes,
+    grepl("race|white|hispanic_total", variable),
+    !variable %in% c("race_white", "race_total_pop")) %>%   
+  mutate(variable = gsub("race_|_total", "", variable),
+         variable = factor(variable, levels= race_levels)) %>%
 
-  ggplot(aes(x=variable, y=outcome_control, col=control_scenario)) + 
-  facet_wrap(~outcome) + 
-  geom_boxplot()
+  cases_by_group_plot(., group_name = "Race-Ethnicity")
+
+##################################################################################################
+# age
+age_variables <- c("age_00_19", "age_20_64", "age_65_plus")
+age_levels <- gsub("age_", "", age_variables)
+
+health_impact %>%
+  filter(#outcome %in% main_outcomes,
+         variable %in% age_variables) %>%   
+  mutate(variable = gsub("age_", "", variable),
+         variable = factor(variable, levels= age_levels)) %>%
+  
+  cases_by_group_plot(., group_name = "Age")
+
+##################################################################################################
+# no need to do sex? 
+
+
+##################################################################################################
+# partner status
+
+# --> this is weird b/c the numbers are influneced by small group denominators
+partner_variables <- str_subset(unique(health_impact$variable), "sex")
+
+health_impact %>%
+  filter(#outcome %in% main_outcomes,
+         variable %in% partner_variables) %>%   
+  mutate(variable = factor(variable, levels= partner_variables)) %>%
+  
+  cases_by_group_plot(., group_name = "Partner Status")
+
+##################################################################################################
+# poverty
+# unique(health_impact$variable)
+
+poverty_variables <- str_subset(unique(health_impact$variable), "poverty")
+poverty_levels <- gsub("poverty_", "", poverty_variables)
+
+health_impact %>%
+  filter(#outcome %in% main_outcomes,
+         variable %in% poverty_variables) %>%   
+  mutate(variable = gsub("poverty_", "", variable),
+         variable = factor(variable, levels= poverty_levels)) %>%
+  
+  cases_by_group_plot(., group_name = "Poverty Status")
 
 ```
 
 
+## continous variables
+
+```{r}
+
+# dt_to_merge = svi %>%
+#   filter(grepl(#"RPL_THEMES_OVERALL", 
+#                "RPL_THEME1_SES",
+#                index_variable))
+
+cases_by_continuous_var_plot <- function(dt_to_merge) {
+  # --> error: mutliple matches??
+health_impact %>%
+    # point health estimates
+    filter(variable == "pop_total",
+           af_name == "af_mean") %>% #filter(GEOID == first(GEOID)) %>% View()
+    left_join(dt_to_merge, relationship = "many-to-many", by="GEOID") %>%
+    
+    ggplot(aes(y=index_value, x=outcome_control, col=index_value, shape=control_scenario, linetype=control_scenario)) +
+    facet_wrap(~outcome+index_variable, scales="free_x") +
+    geom_point() + 
+    geom_smooth() +
+    labs(#y= group_name,
+       x="Number of Cases Reduced",
+       shape = "UFP Reduction (%)",
+       linetype = "UFP Reduction (%)",
+       )
+}
+
+##################################################################################################
+svi %>%
+  filter(grepl(#"RPL_THEMES_OVERALL", 
+               "RPL_THEME1_SES",
+               index_variable)) %>%
+  cases_by_continuous_var_plot()
+  
+  
+
+
+```
 
 
 
