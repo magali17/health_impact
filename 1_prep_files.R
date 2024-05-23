@@ -1,6 +1,6 @@
 # Magali Blanco
 # 05/23/2024
-# script to prepare files for analysis
+# script to prepare files for analysis in 2_health_impact.R. output is 'analysis_files.rda' 
 
 ##################################################################################################
 # NOTES 
